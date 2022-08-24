@@ -1,0 +1,5 @@
+{
+    "rust-targets.targets": [
+        "x86_64-unknown-linux-gnu"
+    ]
+}

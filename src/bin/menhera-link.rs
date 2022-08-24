@@ -19,8 +19,9 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+use tokio_tun::TunBuilder;
 
 #[tokio::main]
-async fn main() -> Result<()> {
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
   Ok(())
 }

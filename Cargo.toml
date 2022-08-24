@@ -2,9 +2,14 @@
 name = "menhera-link"
 version = "0.1.0"
 edition = "2021"
+description = "Simple encrypted site-to-site VPN"
+license = "GPL-3.0-or-later"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
+clap = { version = "3.2.17", features = ["derive"] }
+log = "0.4"
+pretty_env_logger = "0.4"
 tokio = { version = "1.20", features = ["full"] }
 tokio-tun = "0.7"

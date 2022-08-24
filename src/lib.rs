@@ -20,3 +20,16 @@
 */
 
 
+use tokio_tun::{TunBuilder, Tun};
+
+pub fn create_tap(name: &str, mtu: i32) -> Result<Tun, Box<dyn std::error::Error>> {
+  let tap = TunBuilder::new()
+    .tap(true)
+    .name(name)
+    .packet_info(false)
+    .mtu(mtu)
+    .up()
+    .try_build()?;
+  
+  Ok(tap)
+}

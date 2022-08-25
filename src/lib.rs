@@ -19,8 +19,9 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-use log::{trace, info};
-use std::time::Instant;
+
+use log::{trace, info, warn};
+use std::{time::Instant, sync::Arc};
 use aes_gcm::{
     aead::{Aead, KeyInit},
     Aes256Gcm, Nonce, // Or `Aes128Gcm`
@@ -30,6 +31,7 @@ use rand::{thread_rng, Rng};
 use std::{io, net::{SocketAddr, ToSocketAddrs}};
 use tokio::{net::UdpSocket, io::AsyncWriteExt};
 use tokio::io::AsyncReadExt;
+use tokio::sync::mpsc;
 
 fn create_tap(name: &str, mtu: i32) -> Result<Tun, Box<dyn std::error::Error>> {
   let tap = TunBuilder::new()
@@ -142,10 +144,10 @@ impl Packet {
 }
 
 pub struct Server {
-  socket: UdpSocket,
+  socket: Arc<UdpSocket>,
   tap: Tun,
   remote_addr_str: String,
-  shared_secret: Vec<u8>,
+  shared_secret: Arc<Vec<u8>>,
   ip_version: IpVersion,
 }
 
@@ -156,19 +158,20 @@ impl Server {
     info!("Local: {:?}", &bind_addr);
     info!("Remote: {:?}", &resolved_remote_addr);
 
-    let socket = UdpSocket::bind(&bind_addr).await?;
+    let socket = Arc::new(UdpSocket::bind(&bind_addr).await?);
     info!("Listening on: {}", socket.local_addr()?);
     let tap = create_tap(device_name, mtu)?;
     Ok(Server {
       socket,
       tap,
-      shared_secret: shared_secret.to_owned(),
+      shared_secret: Arc::new(shared_secret.to_owned()),
       remote_addr_str: remote_addr.to_owned(),
       ip_version,
     })
   }
 
-  pub async fn run(self: &mut Self) -> Result<(), Box<dyn std::error::Error>> {
+  #[allow(unreachable_patterns)]
+  pub async fn run(self: Self) -> Result<(), Box<dyn std::error::Error>> {
     let Server {
       socket,
       tap,
@@ -181,40 +184,65 @@ impl Server {
     info!("Server running...");
     let mut remote_addr_cache: Option<SocketAddr> = None;
     let mut remote_addr_cached_time = Instant::now();
-    loop {
-      tokio::select! {
-        Ok(nread) = tap.read(&mut tap_buf) => {
-          let plaintext = &tap_buf[.. nread];
+    let (encrypt_tx, mut encrypt_rx) = mpsc::channel::<Vec<u8>>(32);
+    let socket_receive = socket.clone();
+    let socket_send = socket_receive.clone();
+    let (mut tap_reader, mut tap_writer) = tokio::io::split(tap);
+
+    let copied_shared_secret = shared_secret.clone();
+    let remote_addr_str = Arc::new(remote_addr_str.clone());
+    tokio::spawn(async move {
+      loop {
+        if let Some(plaintext) = encrypt_rx.recv().await {
+          let successful_ciphertext: Vec<u8>;
+          if let Ok(ciphertext) = encrypt_aes_gcm(&copied_shared_secret, &plaintext.as_slice()) {
+            successful_ciphertext = ciphertext;
+          } else {
+            warn!("Encryption error");
+            continue;
+          }
           if let Some(_remote_addr) = remote_addr_cache {
             let elapsed = remote_addr_cached_time.elapsed();
             if elapsed.as_secs() > 60 {
-              if let Ok(remote_addr) = resolve_socket_addr(*ip_version, &remote_addr_str) {
+              if let Ok(remote_addr) = resolve_socket_addr(ip_version, &remote_addr_str) {
                 remote_addr_cache = Some(remote_addr);
                 remote_addr_cached_time = Instant::now();
               }
             }
           } else {
-            if let Ok(remote_addr) = resolve_socket_addr(*ip_version, &remote_addr_str) {
+            if let Ok(remote_addr) = resolve_socket_addr(ip_version, &remote_addr_str) {
               remote_addr_cache = Some(remote_addr);
               remote_addr_cached_time = Instant::now();
             }
           }
           if let Some(remote_addr) = remote_addr_cache {
-            if let Ok(ciphertext) = encrypt_aes_gcm(&shared_secret, plaintext) {
-              let packet = Packet::SimpleEncryption { ciphertext };
-              trace!("Sending {} bytes to {:?}", nread, &remote_addr);
-              socket.send_to(&packet.as_vec(), &remote_addr.clone()).await?;
+            let packet = Packet::SimpleEncryption { ciphertext: successful_ciphertext };
+            let packet_data = &packet.as_vec();
+            if let Ok(nsent) = socket_send.send_to(&packet_data, &remote_addr.clone()).await {
+              trace!("Sent {} bytes to {:?}", nsent, &remote_addr);
+            } else {
+              warn!("Failed to send data to {:?}", &remote_addr);
             }
           }
         }
+      }
+      //
+    });
 
-        Ok((nread, peer)) = socket.recv_from(&mut socket_buf) => {
+    loop {
+      tokio::select! {
+        Ok(nread) = tap_reader.read(&mut tap_buf) => {
+          let plaintext = &tap_buf[.. nread].to_owned();
+          encrypt_tx.send(plaintext.clone()).await?;
+        }
+
+        Ok((nread, peer)) = socket_receive.recv_from(&mut socket_buf) => {
           if let Ok(packet) = Packet::new(&socket_buf[.. nread]) {
             trace!("Received {} bytes from {:?}", nread, peer);
             match packet {
               Packet::SimpleEncryption { ciphertext } => {
                 if let Ok(plaintext) = decrypt_aes_gcm(&shared_secret, &ciphertext) {
-                  tap.write_all(&plaintext).await?;
+                  tap_writer.write_all(&plaintext).await?;
                 }
               }
               _ => {

@@ -185,6 +185,7 @@ impl Server {
     let mut remote_addr_cache: Option<SocketAddr> = None;
     let mut remote_addr_cached_time = Instant::now();
     let (encrypt_tx, mut encrypt_rx) = mpsc::channel::<Vec<u8>>(32);
+    let (decrypt_tx, mut decrypt_rx) = mpsc::channel::<Vec<u8>>(32);
     let socket_receive = socket.clone();
     let socket_send = socket_receive.clone();
     let (mut tap_reader, mut tap_writer) = tokio::io::split(tap);
@@ -229,6 +230,26 @@ impl Server {
       //
     });
 
+    let copied_shared_secret = shared_secret.clone();
+    tokio::spawn(async move {
+      loop {
+        if let Some(ciphertext) = decrypt_rx.recv().await {
+          let successful_plaintext: Vec<u8>;
+          if let Ok(plaintext) = decrypt_aes_gcm(&copied_shared_secret, &ciphertext) {
+            successful_plaintext = plaintext;
+          } else {
+            warn!("Decryption error");
+            continue;
+          }
+          if let Ok(()) = tap_writer.write_all(&successful_plaintext).await {
+            trace!("{} bytes data written to tap interface", &successful_plaintext.len());
+          } else {
+            warn!("Failed to write data to tap interface");
+          }
+        }
+      }
+    });
+
     loop {
       tokio::select! {
         Ok(nread) = tap_reader.read(&mut tap_buf) => {
@@ -241,9 +262,7 @@ impl Server {
             trace!("Received {} bytes from {:?}", nread, peer);
             match packet {
               Packet::SimpleEncryption { ciphertext } => {
-                if let Ok(plaintext) = decrypt_aes_gcm(&shared_secret, &ciphertext) {
-                  tap_writer.write_all(&plaintext).await?;
-                }
+                decrypt_tx.send(ciphertext).await?;
               }
               _ => {
                 // NOOP

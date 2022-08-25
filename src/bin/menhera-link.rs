@@ -29,6 +29,7 @@ use std::sync::Arc;
 use rand::{thread_rng, Rng};
 use tokio::fs;
 use std::os::unix::fs::PermissionsExt;
+use menhera_link::Server;
 
 #[derive(Debug, Clone)]
 struct MenheraLinkError(Arc<str>);
@@ -105,12 +106,13 @@ enum Commands {
 
 async fn generate_shared_secret(path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
   let shared_secret_data: [u8; 32] = thread_rng().gen();
+  let base64_shared_secret = base64::encode(&shared_secret_data);
   let mut f = fs::File::create(&path).await?;
   let mut permissions = f.metadata().await?.permissions();
   permissions.set_mode(0o600);
   assert_eq!(permissions.mode(), 0o600);
   f.set_permissions(permissions).await?;
-  f.write_all(&shared_secret_data as &[u8]).await?;
+  f.write_all(&base64_shared_secret.as_bytes()).await?;
   info!("Shared secret file created: {:?}", &path);
   Ok(())
 }
@@ -164,6 +166,11 @@ async fn create(options: CreateOptions) -> Result<(), Box<dyn std::error::Error>
   }
   info!("Local: {:?}", &local_sockaddr);
   info!("Remote: {:?}", &remote_sockaddr);
+  let shared_secret_base64 = fs::read_to_string(options.shared_key).await?;
+  let shared_secret = base64::decode(shared_secret_base64)?;
+  assert_eq!(shared_secret.len(), 32);
+  let server = Server::new(shared_secret.as_slice(), &local_sockaddr, &remote_sockaddr, &options.dev_name, options.mtu).await?;
+  server.run().await?;
   Ok(())
 }
 

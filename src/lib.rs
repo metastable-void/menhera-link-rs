@@ -30,7 +30,7 @@ use std::{io, net::SocketAddr};
 use tokio::net::UdpSocket;
 use tokio::io::AsyncReadExt;
 
-pub fn create_tap(name: &str, mtu: i32) -> Result<Tun, Box<dyn std::error::Error>> {
+fn create_tap(name: &str, mtu: i32) -> Result<Tun, Box<dyn std::error::Error>> {
   let tap = TunBuilder::new()
     .tap(true)
     .name(name)
@@ -55,23 +55,33 @@ pub fn encrypt_aes_gcm(key: &[u8], plaintext: &[u8]) -> Result<Vec<u8>, Box<dyn 
   Ok([&iv as &[u8], &ciphertext.as_slice()].concat())
 }
 
+enum Packet {
+  SimpleEncryption {
+    ciphertext: Vec<u8>,
+  },
+}
+
 pub struct Server {
   socket: UdpSocket,
   tap: Tun,
+  remote_addr: SocketAddr,
+  shared_secret: Vec<u8>,
 }
 
 impl Server {
-  pub async fn new(bind_addr: SocketAddr, device_name: &str, mtu: i32) -> Result<Self, Box<dyn std::error::Error>> {
+  pub async fn new(shared_secret: &[u8], bind_addr: &SocketAddr, remote_addr: &SocketAddr, device_name: &str, mtu: i32) -> Result<Self, Box<dyn std::error::Error>> {
     let socket = UdpSocket::bind(&bind_addr).await?;
     info!("Listening on: {}", socket.local_addr()?);
     let tap = create_tap(device_name, mtu)?;
     Ok(Server {
       socket,
       tap,
+      remote_addr: remote_addr.clone(),
+      shared_secret: shared_secret.to_owned(),
     })
   }
 
-  pub async fn run() -> Result<(), std::io::Error> {
+  pub async fn run(self: &Self) -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
   }
 }

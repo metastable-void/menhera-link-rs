@@ -97,26 +97,48 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
   let Commands::Create { options } = args.command;
   let local_sockaddrs = options.local.to_socket_addrs()?;
   let local_sockaddr: SocketAddr;
-  'iter_sockaddrs: loop {
+  'iter_local_sockaddrs: loop {
     for sockaddr in local_sockaddrs {
       match sockaddr {
         SocketAddr::V4(v4addr) => {
           if options.ipv4 {
             local_sockaddr = SocketAddr::V4(v4addr);
-            break 'iter_sockaddrs;
+            break 'iter_local_sockaddrs;
           }
         }
         SocketAddr::V6(v6addr) => {
           if options.ipv6 {
             local_sockaddr = SocketAddr::V6(v6addr);
-            break 'iter_sockaddrs;
+            break 'iter_local_sockaddrs;
           }
         }
       }
     }
     return Err(Box::new(MenheraLinkError::new("")) as Box<dyn std::error::Error>);
   }
-  println!("{:?}", local_sockaddr);
+  let remote_sockaddrs = options.remote.to_socket_addrs()?;
+  let remote_sockaddr: SocketAddr;
+  'iter_remote_sockaddrs: loop {
+    for sockaddr in remote_sockaddrs {
+      match sockaddr {
+        SocketAddr::V4(v4addr) => {
+          if options.ipv4 {
+            remote_sockaddr = SocketAddr::V4(v4addr);
+            break 'iter_remote_sockaddrs;
+          }
+        }
+        SocketAddr::V6(v6addr) => {
+          if options.ipv6 {
+            remote_sockaddr = SocketAddr::V6(v6addr);
+            break 'iter_remote_sockaddrs;
+          }
+        }
+      }
+    }
+    return Err(Box::new(MenheraLinkError::new("")) as Box<dyn std::error::Error>);
+  }
+  println!("Local: {:?}", &local_sockaddr);
+  println!("Remote: {:?}", &remote_sockaddr);
   debug!("Starting...");
   Ok(())
 }

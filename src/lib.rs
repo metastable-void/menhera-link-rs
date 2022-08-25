@@ -20,6 +20,7 @@
 */
 
 use log::{trace, info};
+use std::time::Instant;
 use aes_gcm::{
     aead::{Aead, KeyInit},
     Aes256Gcm, Nonce, // Or `Aes128Gcm`
@@ -178,11 +179,27 @@ impl Server {
     let mut tap_buf = [0u8; 65536];
     let mut socket_buf = [0u8; 65536];
     info!("Server running...");
+    let mut remote_addr_cache: Option<SocketAddr> = None;
+    let mut remote_addr_cached_time = Instant::now();
     loop {
       tokio::select! {
         Ok(nread) = tap.read(&mut tap_buf) => {
           let plaintext = &tap_buf[.. nread];
-          if let Ok(remote_addr) = resolve_socket_addr(*ip_version, &remote_addr_str) {
+          if let Some(_remote_addr) = remote_addr_cache {
+            let elapsed = remote_addr_cached_time.elapsed();
+            if elapsed.as_secs() > 60 {
+              if let Ok(remote_addr) = resolve_socket_addr(*ip_version, &remote_addr_str) {
+                remote_addr_cache = Some(remote_addr);
+                remote_addr_cached_time = Instant::now();
+              }
+            }
+          } else {
+            if let Ok(remote_addr) = resolve_socket_addr(*ip_version, &remote_addr_str) {
+              remote_addr_cache = Some(remote_addr);
+              remote_addr_cached_time = Instant::now();
+            }
+          }
+          if let Some(remote_addr) = remote_addr_cache {
             if let Ok(ciphertext) = encrypt_aes_gcm(&shared_secret, plaintext) {
               let packet = Packet::SimpleEncryption { ciphertext };
               trace!("Sending {} bytes to {:?}", nread, &remote_addr);

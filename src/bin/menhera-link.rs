@@ -19,34 +19,14 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-use log::{debug, info, warn, error};
+use log::info;
 use clap::{Parser, Subcommand, ArgGroup};
 use tokio::io::AsyncWriteExt;
 use std::path::PathBuf;
-use std::net::{SocketAddr, ToSocketAddrs};
-use std::fmt;
-use std::sync::Arc;
 use rand::{thread_rng, Rng};
 use tokio::fs;
 use std::os::unix::fs::PermissionsExt;
-use menhera_link::Server;
-
-#[derive(Debug, Clone)]
-struct MenheraLinkError(Arc<str>);
-
-impl MenheraLinkError {
-  pub fn new(description: &str) -> Self {
-    MenheraLinkError(Arc::from(description))
-  }
-}
-
-impl fmt::Display for MenheraLinkError {
-  fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
-    write!(f, "MenheraLinkError: {}", self.0)
-  }
-}
-
-impl std::error::Error for MenheraLinkError {}
+use menhera_link::{Server, IpVersion};
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -118,58 +98,17 @@ async fn generate_shared_secret(path: PathBuf) -> Result<(), Box<dyn std::error:
 }
 
 async fn create(options: CreateOptions) -> Result<(), Box<dyn std::error::Error>> {
-  // Re-resolve later to catch up with DDNS changes
-  let local = options.local.clone();
-  let remote = options.remote.clone();
+  let ip_version: IpVersion;
+  if options.ipv4 {
+    ip_version = IpVersion::V4;
+  } else {
+    ip_version = IpVersion::V6;
+  }
 
-  let local_sockaddrs = options.local.to_socket_addrs()?;
-  let local_sockaddr: SocketAddr;
-  'iter_local_sockaddrs: loop {
-    for sockaddr in local_sockaddrs {
-      match sockaddr {
-        SocketAddr::V4(v4addr) => {
-          if options.ipv4 {
-            local_sockaddr = SocketAddr::V4(v4addr);
-            break 'iter_local_sockaddrs;
-          }
-        }
-        SocketAddr::V6(v6addr) => {
-          if options.ipv6 {
-            local_sockaddr = SocketAddr::V6(v6addr);
-            break 'iter_local_sockaddrs;
-          }
-        }
-      }
-    }
-    return Err(Box::new(MenheraLinkError::new("")) as Box<dyn std::error::Error>);
-  }
-  let remote_sockaddrs = options.remote.to_socket_addrs()?;
-  let remote_sockaddr: SocketAddr;
-  'iter_remote_sockaddrs: loop {
-    for sockaddr in remote_sockaddrs {
-      match sockaddr {
-        SocketAddr::V4(v4addr) => {
-          if options.ipv4 {
-            remote_sockaddr = SocketAddr::V4(v4addr);
-            break 'iter_remote_sockaddrs;
-          }
-        }
-        SocketAddr::V6(v6addr) => {
-          if options.ipv6 {
-            remote_sockaddr = SocketAddr::V6(v6addr);
-            break 'iter_remote_sockaddrs;
-          }
-        }
-      }
-    }
-    return Err(Box::new(MenheraLinkError::new("")) as Box<dyn std::error::Error>);
-  }
-  info!("Local: {:?}", &local_sockaddr);
-  info!("Remote: {:?}", &remote_sockaddr);
   let shared_secret_base64 = fs::read_to_string(options.shared_key).await?;
   let shared_secret = base64::decode(shared_secret_base64)?;
   assert_eq!(shared_secret.len(), 32);
-  let server = Server::new(shared_secret.as_slice(), &local_sockaddr, &remote_sockaddr, &options.dev_name, options.mtu).await?;
+  let mut server = Server::new(ip_version, shared_secret.as_slice(), &options.local, &options.remote, &options.dev_name, options.mtu).await?;
   server.run().await?;
   Ok(())
 }

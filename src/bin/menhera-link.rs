@@ -21,10 +21,14 @@
 
 use log::{debug, info, warn, error};
 use clap::{Parser, Subcommand, ArgGroup};
+use tokio::io::AsyncWriteExt;
 use std::path::PathBuf;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::fmt;
 use std::sync::Arc;
+use rand::{thread_rng, Rng};
+use tokio::fs;
+use std::os::unix::fs::PermissionsExt;
 
 #[derive(Debug, Clone)]
 struct MenheraLinkError(Arc<str>);
@@ -87,15 +91,27 @@ enum Commands {
   Create {
     #[clap(flatten)]
     options: CreateOptions,
-  }
+  },
+
+  /// Generates a shared secret file.
+  GenerateSharedSecret {
+    path: PathBuf,
+  },
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Box<dyn std::error::Error>> {
-  pretty_env_logger::init();
-  let args = Args::parse();
-  let Commands::Create { options } = args.command;
-  
+async fn generate_shared_secret(path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
+  let shared_secret_data: [u8; 32] = thread_rng().gen();
+  let mut f = fs::File::create(&path).await?;
+  let mut permissions = f.metadata().await?.permissions();
+  permissions.set_mode(0o600);
+  assert_eq!(permissions.mode(), 0o600);
+  f.set_permissions(permissions).await?;
+  f.write_all(&shared_secret_data as &[u8]).await?;
+  info!("Shared secret file created: {:?}", &path);
+  Ok(())
+}
+
+async fn create(options: CreateOptions) -> Result<(), Box<dyn std::error::Error>> {
   // Re-resolve later to catch up with DDNS changes
   let local = options.local.clone();
   let remote = options.remote.clone();
@@ -142,8 +158,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     return Err(Box::new(MenheraLinkError::new("")) as Box<dyn std::error::Error>);
   }
-  println!("Local: {:?}", &local_sockaddr);
-  println!("Remote: {:?}", &remote_sockaddr);
-  debug!("Starting...");
+  info!("Local: {:?}", &local_sockaddr);
+  info!("Remote: {:?}", &remote_sockaddr);
   Ok(())
+}
+
+#[tokio::main]
+async fn main() -> Result<(), Box<dyn std::error::Error>> {
+  pretty_env_logger::init();
+  let args = Args::parse();
+  match args.command {
+    Commands::Create { options } => {
+      return create(options).await;
+    }
+
+    Commands::GenerateSharedSecret { path } => {
+      return generate_shared_secret(path).await;
+    }
+  }
 }

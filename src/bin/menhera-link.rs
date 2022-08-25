@@ -67,6 +67,10 @@ struct CreateOptions {
   #[clap(short = '6', long, action)]
   ipv6: bool,
 
+  /// Device MTU
+  #[clap(short, long, default_value_t = 1300i32)]
+  mtu: i32,
+
   /// Path to shared key file
   #[clap(short, long, value_parser, id = "PATH")]
   shared_key: PathBuf,

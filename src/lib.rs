@@ -19,13 +19,16 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
+use log::{debug, info, warn, error};
 use aes_gcm::{
     aead::{Aead, KeyInit},
     Aes256Gcm, Nonce, // Or `Aes128Gcm`
 };
 use tokio_tun::{TunBuilder, Tun};
 use rand::{thread_rng, Rng};
-use std::io;
+use std::{io, net::SocketAddr};
+use tokio::net::UdpSocket;
+use tokio::io::AsyncReadExt;
 
 pub fn create_tap(name: &str, mtu: i32) -> Result<Tun, Box<dyn std::error::Error>> {
   let tap = TunBuilder::new()
@@ -39,7 +42,7 @@ pub fn create_tap(name: &str, mtu: i32) -> Result<Tun, Box<dyn std::error::Error
   Ok(tap)
 }
 
-pub fn encrypt_aes_gcm(key: &[u8; 32], plaintext: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
+pub fn encrypt_aes_gcm(key: &[u8], plaintext: &[u8]) -> Result<Vec<u8>, Box<dyn std::error::Error>> {
   let iv: [u8; 12] = thread_rng().gen();
   let cipher;
   if let Ok(successful_cipher) = Aes256Gcm::new_from_slice(key.as_ref()) {
@@ -50,4 +53,25 @@ pub fn encrypt_aes_gcm(key: &[u8; 32], plaintext: &[u8]) -> Result<Vec<u8>, Box<
   let nonce = Nonce::from_slice(&iv);
   let ciphertext = cipher.encrypt(nonce, plaintext)?;
   Ok([&iv as &[u8], &ciphertext.as_slice()].concat())
+}
+
+pub struct Server {
+  socket: UdpSocket,
+  tap: Tun,
+}
+
+impl Server {
+  pub async fn new(bind_addr: SocketAddr, device_name: &str, mtu: i32) -> Result<Self, Box<dyn std::error::Error>> {
+    let socket = UdpSocket::bind(&bind_addr).await?;
+    info!("Listening on: {}", socket.local_addr()?);
+    let tap = create_tap(device_name, mtu)?;
+    Ok(Server {
+      socket,
+      tap,
+    })
+  }
+
+  pub async fn run() -> Result<(), std::io::Error> {
+    Ok(())
+  }
 }

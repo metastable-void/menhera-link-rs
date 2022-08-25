@@ -20,7 +20,7 @@
 */
 
 use log::{debug, info, warn, error};
-use clap::{Parser, Subcommand, ValueEnum, ArgGroup};
+use clap::{Parser, Subcommand, ArgGroup};
 use std::path::PathBuf;
 use std::net::{SocketAddr, ToSocketAddrs};
 use std::fmt;
@@ -95,6 +95,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
   pretty_env_logger::init();
   let args = Args::parse();
   let Commands::Create { options } = args.command;
+  
+  // Re-resolve later to catch up with DDNS changes
+  let local = options.local.clone();
+  let remote = options.remote.clone();
+
   let local_sockaddrs = options.local.to_socket_addrs()?;
   let local_sockaddr: SocketAddr;
   'iter_local_sockaddrs: loop {

@@ -105,7 +105,9 @@ async fn create(options: CreateOptions) -> Result<(), Box<dyn std::error::Error>
     ip_version = IpVersion::V6;
   }
 
-  let shared_secret_base64 = fs::read_to_string(options.shared_key).await?;
+  let shared_secret_base64 = fs::read(options.shared_key).await?;
+  let shared_secret_base64 = shared_secret_base64.into_iter().filter(|b| !b" \n\t\r\x0b\x0c".contains(b));
+  let shared_secret_base64 = Vec::from_iter(shared_secret_base64);
   let shared_secret = base64::decode(shared_secret_base64)?;
   assert_eq!(shared_secret.len(), 32);
   let mut server = Server::new(ip_version, shared_secret.as_slice(), &options.local, &options.remote, &options.dev_name, options.mtu).await?;

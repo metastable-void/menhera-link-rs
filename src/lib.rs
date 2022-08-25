@@ -177,6 +177,7 @@ impl Server {
     } = self;
     let mut tap_buf = [0u8; 65536];
     let mut socket_buf = [0u8; 65536];
+    info!("Server running...");
     loop {
       tokio::select! {
         Ok(nread) = tap.read(&mut tap_buf) => {
@@ -184,6 +185,7 @@ impl Server {
           if let Ok(remote_addr) = resolve_socket_addr(*ip_version, &remote_addr_str) {
             if let Ok(ciphertext) = encrypt_aes_gcm(&shared_secret, plaintext) {
               let packet = Packet::SimpleEncryption { ciphertext };
+              trace!("Sending {} bytes to {:?}", nread, &remote_addr);
               socket.send_to(&packet.as_vec(), &remote_addr.clone()).await?;
             }
           }

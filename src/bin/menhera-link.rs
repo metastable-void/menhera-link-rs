@@ -49,7 +49,7 @@ struct CreateOptions {
   ipv6: bool,
 
   /// Device MTU
-  #[clap(short, long, default_value_t = 1300i32)]
+  #[clap(short, long, default_value_t = 1350i32)]
   mtu: i32,
 
   /// Path to shared key file

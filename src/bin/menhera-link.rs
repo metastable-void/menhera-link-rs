@@ -105,6 +105,10 @@ async fn create(options: CreateOptions) -> Result<(), Box<dyn std::error::Error>
     ip_version = IpVersion::V6;
   }
 
+  if options.mtu < 576 || options.mtu > 65535 {
+    return Err(Box::new(std::io::Error::new(std::io::ErrorKind::InvalidInput, "Invalid MTU size")));
+  }
+
   let shared_secret_base64 = fs::read(options.shared_key).await?;
   let shared_secret_base64 = shared_secret_base64.into_iter().filter(|b| !b" \n\t\r\x0b\x0c".contains(b));
   let shared_secret_base64 = Vec::from_iter(shared_secret_base64);

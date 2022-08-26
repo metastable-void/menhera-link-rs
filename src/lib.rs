@@ -224,6 +224,8 @@ impl Server {
             } else {
               warn!("Failed to send data to {:?}", &remote_addr);
             }
+          } else {
+            info!("Remote address not resolved (yet). Discarding packet...");
           }
         }
       }
@@ -253,8 +255,8 @@ impl Server {
     loop {
       tokio::select! {
         Ok(nread) = tap_reader.read(&mut tap_buf) => {
-          let plaintext = &tap_buf[.. nread].to_owned();
-          encrypt_tx.send(plaintext.clone()).await?;
+          let plaintext = tap_buf[.. nread].to_owned();
+          encrypt_tx.send(plaintext).await?;
         }
 
         Ok((nread, peer)) = socket_receive.recv_from(&mut socket_buf) => {

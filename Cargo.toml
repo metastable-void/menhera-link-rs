@@ -15,6 +15,4 @@ tokio = { version = "1.20", features = ["full"] }
 tokio-tun = "0.7"
 aes-gcm = { version = "0.10", features = ["std"] }
 rand = "0.8"
-daemonize-me = "2.0"
-nix = "0.25"
 env_logger = "0.9"

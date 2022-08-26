@@ -19,16 +19,14 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-use log::{info, LevelFilter};
+use log::LevelFilter;
 use clap::{Parser, Subcommand, ArgGroup, ValueEnum};
 use tokio::io::AsyncWriteExt;
-use std::path::{PathBuf, Path};
+use std::path::PathBuf;
 use rand::{thread_rng, Rng};
 use tokio::fs;
 use std::os::unix::fs::PermissionsExt;
 use menhera_link::{Server, IpVersion};
-use daemonize_me::Daemon;
-use nix::{sys::{signal::{kill, Signal}}, unistd::Pid};
 
 #[derive(Parser)]
 #[clap(author, version, about, long_about = None)]
@@ -105,16 +103,6 @@ enum Commands {
   GenerateSharedSecret {
     path: PathBuf,
   },
-
-  /// Delete a created interface and terminate the associated daemon
-  Delete {
-    /// Device name to delete
-    dev_name: String,
-
-    /// Path to store PID value in
-    #[clap(short, long, value_parser)]
-    pid_file: Option<PathBuf>,
-  }
 }
 
 async fn generate_shared_secret(path: PathBuf) -> Result<(), Box<dyn std::error::Error>> {
@@ -127,38 +115,6 @@ async fn generate_shared_secret(path: PathBuf) -> Result<(), Box<dyn std::error:
   f.set_permissions(permissions).await?;
   f.write_all(&base64_shared_secret.as_bytes()).await?;
   println!("Shared secret file created: {:?}", &path);
-  Ok(())
-}
-
-async fn delete(dev_name: &str, pid_file: Option<PathBuf>) -> Result<(), Box<dyn std::error::Error>> {
-  let default_pid_path = format!("/var/run/menhera-link_{}.pid", dev_name);
-  let pid_file = match pid_file {
-    Some(path) => {
-      path
-    }
-    None => {
-      Path::new::<str>(&default_pid_path).to_path_buf()
-    }
-  };
-  let pid_str = fs::read_to_string(pid_file).await?;
-  let pid: u32;
-  let parts = pid_str.split_whitespace().map(|s| s.parse::<u32>());
-  'parse_pid_block: loop {
-    for res in parts {
-      match res {
-        Ok(retrieved_pid) => {
-          pid = retrieved_pid;
-          break 'parse_pid_block;
-        }
-        Err(_) => {
-          return Err(Box::new(std::io::Error::new(std::io::ErrorKind::InvalidInput, "Invalid PID file contents")));
-        }
-      }
-    }
-    return Err(Box::new(std::io::Error::new(std::io::ErrorKind::InvalidInput, "Invalid PID file contents")));
-  }
-  let nix_pid = Pid::from_raw(pid.try_into().unwrap());
-  kill(nix_pid, Signal::SIGTERM)?;
   Ok(())
 }
 
@@ -180,39 +136,7 @@ async fn create(options: CreateOptions) -> Result<(), Box<dyn std::error::Error>
   let shared_secret = base64::decode(shared_secret_base64)?;
   assert_eq!(shared_secret.len(), 32);
   let server = Server::new(ip_version, shared_secret.as_slice(), &options.local, &options.remote, &options.dev_name, options.mtu).await?;
-  if !options.no_daemon {
-    let log_file = format!("/var/log/menhera-link_{}.log", options.dev_name);
-    let stdin = std::fs::File::open("/dev/null")?;
-    let stdout = std::fs::File::create(log_file)?;
-    let stderr = stdout.try_clone()?;
-    let default_pid_path = format!("/var/run/menhera-link_{}.pid", options.dev_name);
-    let pid_file = match options.pid_file {
-      Some(path) => {
-        path
-      }
-      None => {
-        Path::new::<str>(&default_pid_path).to_path_buf()
-      }
-    };
-    let daemon = Daemon::new()
-      .pid_file(pid_file, Some(false))
-      .umask(0o000)
-      .work_dir(Path::new("/"))
-      .stdin(stdin)
-      .stdout(stdout)
-      .stderr(stderr)
-      .start();
-    
-    match daemon {
-      Ok(_) => {
-        let pid = std::process::id();
-        info!("Daemonized (pid = {})", pid);
-      }
-      Err(e) => {
-        return Err(Box::new(e));
-      }
-    }
-  }
+  
   server.run().await?;
   Ok(())
 }
@@ -249,10 +173,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     Commands::GenerateSharedSecret { path } => {
       return generate_shared_secret(path).await;
-    }
-
-    Commands::Delete { dev_name, pid_file } => {
-      return delete(&dev_name, pid_file).await;
     }
   }
 }

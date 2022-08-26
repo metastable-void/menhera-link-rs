@@ -20,7 +20,7 @@
 */
 
 
-use log::{trace, info, warn};
+use log::{trace, info, warn, debug};
 use std::{time::Instant, sync::Arc};
 use aes_gcm::{
     aead::{Aead, KeyInit},
@@ -193,6 +193,7 @@ impl Server {
     let copied_shared_secret = shared_secret.clone();
     let remote_addr_str = Arc::new(remote_addr_str.clone());
     tokio::spawn(async move {
+      debug!("Encryption thread started");
       loop {
         if let Some(plaintext) = encrypt_rx.recv().await {
           let successful_ciphertext: Vec<u8>;
@@ -234,6 +235,7 @@ impl Server {
 
     let copied_shared_secret = shared_secret.clone();
     tokio::spawn(async move {
+      debug!("Decryption thread started");
       loop {
         if let Some(ciphertext) = decrypt_rx.recv().await {
           let successful_plaintext: Vec<u8>;

@@ -19,8 +19,7 @@
   along with this program.  If not, see <https://www.gnu.org/licenses/>.
 */
 
-use syslog::{Facility, Formatter3164, BasicLogger};
-use log::{LevelFilter, info};
+use log::{info, LevelFilter};
 use clap::{Parser, Subcommand, ArgGroup, ValueEnum};
 use tokio::io::AsyncWriteExt;
 use std::path::{PathBuf, Path};
@@ -182,9 +181,10 @@ async fn create(options: CreateOptions) -> Result<(), Box<dyn std::error::Error>
   assert_eq!(shared_secret.len(), 32);
   let server = Server::new(ip_version, shared_secret.as_slice(), &options.local, &options.remote, &options.dev_name, options.mtu).await?;
   if !options.no_daemon {
+    let log_file = format!("/var/log/menhera-link_{}.log", options.dev_name);
     let stdin = std::fs::File::open("/dev/null")?;
-    let stdout = std::fs::File::open("/dev/null")?;
-    let stderr = std::fs::File::open("/dev/null")?;
+    let stdout = std::fs::File::create(log_file)?;
+    let stderr = stdout.try_clone()?;
     let default_pid_path = format!("/var/run/menhera-link_{}.pid", options.dev_name);
     let pid_file = match options.pid_file {
       Some(path) => {
@@ -219,23 +219,11 @@ async fn create(options: CreateOptions) -> Result<(), Box<dyn std::error::Error>
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-  let formatter = Formatter3164 {
-    facility: Facility::LOG_DAEMON,
-    hostname: None,
-    process: "menhera-link".into(),
-    pid: 0,
-  };
-  let logger = match syslog::unix(formatter) {
-    Err(e) => {
-      println!("impossible to connect to syslog: {:?}", e);
-      return Ok(());
-    },
-    Ok(logger) => logger,
-  };
   let args = Args::parse();
-
-  log::set_boxed_logger(Box::new(BasicLogger::new(logger)))
-    .map(|()| log::set_max_level(match args.log_level {
+  env_logger::builder()
+    .default_format()
+    .write_style(env_logger::WriteStyle::Never)
+    .filter_level(match args.log_level {
       LogLevel::Trace => {
         LevelFilter::Trace
       }
@@ -251,7 +239,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
       LogLevel::Error => {
         LevelFilter::Error
       }
-    }))?;
+    })
+    .init();
   
   match args.command {
     Commands::Create { options } => {

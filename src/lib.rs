@@ -184,7 +184,7 @@ impl Server {
     })
   }
 
-  async fn run_plain(self: Self) -> Result<(), Box<dyn stf::error::Error>> {
+  async fn run_plain(self: Self) -> Result<(), Box<dyn std::error::Error>> {
     let Server {
       socket,
       tap,

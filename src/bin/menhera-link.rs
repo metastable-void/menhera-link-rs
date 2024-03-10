@@ -35,7 +35,7 @@ struct Args {
   command: Commands,
 
   /// Logging level
-  #[clap(arg_enum, value_parser, short = 'L', long, default_value_t = LogLevel::Info)]
+  #[clap(value_enum, value_parser, short = 'L', long, default_value_t = LogLevel::Info)]
   log_level: LogLevel,
 }
 

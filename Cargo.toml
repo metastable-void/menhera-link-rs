@@ -9,10 +9,10 @@ license = "GPL-3.0-or-later"
 
 [dependencies]
 base64 = "0.13"
-clap = { version = "3.2.17", features = ["derive"] }
+clap = { version = "4", features = ["derive"] }
 log = "0.4"
-tokio = { version = "1.20", features = ["full"] }
-tokio-tun = "0.7"
+tokio = { version = "1", features = ["full"] }
+tokio-tun = "0.11"
 aes-gcm = { version = "0.10", features = ["std"] }
 rand = "0.8"
 env_logger = "0.9"

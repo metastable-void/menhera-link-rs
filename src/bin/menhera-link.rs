@@ -58,7 +58,7 @@ struct CreateOptions {
 
   /// Path to shared key file
   #[clap(short, long, value_parser, id = "SHARED_KEY_PATH")]
-  shared_key: PathBuf,
+  shared_key: Option<PathBuf>,
 
   /// Local VPN endpoint
   #[clap(short, long, value_parser, id = "ADDR:PORT")]
@@ -130,12 +130,16 @@ async fn create(options: CreateOptions) -> Result<(), Box<dyn std::error::Error>
     return Err(Box::new(std::io::Error::new(std::io::ErrorKind::InvalidInput, "Invalid MTU size")));
   }
 
-  let shared_secret_base64 = fs::read(options.shared_key).await?;
-  let shared_secret_base64 = shared_secret_base64.into_iter().filter(|b| !b" \n\t\r\x0b\x0c".contains(b));
-  let shared_secret_base64 = Vec::from_iter(shared_secret_base64);
-  let shared_secret = base64::decode(shared_secret_base64)?;
-  assert_eq!(shared_secret.len(), 32);
-  let server = Server::new(ip_version, shared_secret.as_slice(), &options.local, &options.remote, &options.dev_name, options.mtu).await?;
+  let server = if let Some(shared_key) = options.shared_key {
+    let shared_secret_base64 = fs::read(shared_key).await?;
+    let shared_secret_base64 = shared_secret_base64.into_iter().filter(|b| !b" \n\t\r\x0b\x0c".contains(b));
+    let shared_secret_base64 = Vec::from_iter(shared_secret_base64);
+    let shared_secret = base64::decode(shared_secret_base64)?;
+    assert_eq!(shared_secret.len(), 32);
+    Server::new(ip_version, shared_secret.as_slice(), &options.local, &options.remote, &options.dev_name, options.mtu).await?
+  } else {
+    Server::new_plain(ip_version, &options.local, &options.remote, &options.dev_name, options.mtu).await?
+  };
   
   server.run().await?;
   Ok(())

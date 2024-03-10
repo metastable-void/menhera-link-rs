@@ -168,7 +168,7 @@ pub struct Server {
 impl Server {
   pub async fn new(ip_version: IpVersion, shared_secret: &[u8], bind_addr: &str, remote_addr: &str, device_name: &str, mtu: i32) -> Result<Self, Box<dyn std::error::Error>> {
     let bind_addr = resolve_socket_addr(ip_version, bind_addr)?;
-    let resolved_remote_addr = resolve_socket_addr(ip_version, remote_addr)?;
+    let resolved_remote_addr = resolve_socket_addr(ip_version, remote_addr).ok();
     info!("Local: {:?}", &bind_addr);
     info!("Remote: {:?}", &resolved_remote_addr);
 
@@ -179,6 +179,25 @@ impl Server {
       socket,
       tap,
       shared_secret: Some(Arc::new(shared_secret.to_owned())),
+      remote_addr_str: remote_addr.to_owned(),
+      ip_version,
+    })
+  }
+
+  pub async fn new_plain(ip_version: IpVersion, bind_addr: &str, remote_addr: &str, device_name: &str, mtu: i32) -> Result<Self, Box<dyn std::error::Error>> {
+    let bind_addr = resolve_socket_addr(ip_version, bind_addr)?;
+    let resolved_remote_addr = resolve_socket_addr(ip_version, remote_addr).ok();
+    info!("Local: {:?}", &bind_addr);
+    info!("Remote: {:?}", &resolved_remote_addr);
+
+    let socket = Arc::new(UdpSocket::bind(&bind_addr).await?);
+    info!("Listening on: {}", socket.local_addr()?);
+
+    let tap = create_tap(device_name, mtu)?;
+    Ok(Server {
+      socket,
+      tap,
+      shared_secret: None,
       remote_addr_str: remote_addr.to_owned(),
       ip_version,
     })

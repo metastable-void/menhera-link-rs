@@ -210,7 +210,7 @@ impl Server {
     loop {
       tokio::select! {
         Ok(nread) = tap_reader.read(&mut tap_buf) => {
-          let plaintext = tap_buf[.. nread];
+          let plaintext = &tap_buf[.. nread];
 
           if let Some(_remote_addr) = remote_addr_cache {
             let elapsed = remote_addr_cached_time.elapsed();
